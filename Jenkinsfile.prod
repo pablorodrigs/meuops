@@ -13,15 +13,32 @@ pipeline {
         echo 'Starting container from Docker Hub...'
         bat 'docker-compose -f docker-compose.prod.yml pull' // Baixa a imagem do Docker Hub
         bat 'docker-compose -f docker-compose.prod.yml up -d --no-color'
-        sleep time: 60, unit: 'SECONDS' // Aumenta o tempo para o serviço Spring Boot iniciar
-        bat 'docker-compose -f docker-compose.prod.yml logs' // Verifica os logs para conferir o status do Spring Boot
+        script {
+          // Espera até que o serviço esteja respondendo
+          def retries = 30
+          def success = false
+          while (retries > 0 && !success) {
+            try {
+              bat(script: 'curl http://localhost:8585', returnStatus: true)  // Tenta acessar o serviço
+              success = true
+            } catch (Exception e) {
+              echo "Service not responding, retrying... ($retries retries left)"
+              sleep(time: 10, unit: 'SECONDS')  // Aguarda 10 segundos antes de tentar novamente
+              retries--
+            }
+          }
+          if (!success) {
+            error "Service failed to start after several retries"
+          }
+        }
+        bat 'docker-compose -f docker-compose.prod.yml logs --tail=100' // Verifica os logs do serviço
         bat 'docker-compose -f docker-compose.prod.yml ps' // Verifica o status do container
       }
     }
 
     stage('Run tests against the container') {
       steps {
-        bat 'curl http://localhost:8585 || echo "Service not responding"'
+        bat 'curl http://localhost:8585/actuator/health || echo "Service not responding"'
       }
     }
   }
@@ -29,6 +46,6 @@ pipeline {
   post {
     always {
       echo 'Pipeline completed'
-      // Não derruba mais o container aqui
     }
   }
+}
