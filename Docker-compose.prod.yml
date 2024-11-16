@@ -1,9 +1,8 @@
-
-version: '4'
+version: '3.9'
 
 services:
   database:
-    image: postgres
+    image: postgres:latest
     environment:
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: papi
@@ -12,11 +11,24 @@ services:
 
   api:
     image: andprof/ac2_ca:latest
-    networks:
-      - default  # Certifique-se de que está usando a rede adequada
     environment:
       DB_HOST: database
     ports:
       - "8585:8080"
+
+  jenkins:
+    image: jenkins/jenkins:lts
+    user: root
+    ports:
+      - "9090:8080"   # Porta padrão do Jenkins
+      - "50000:50000" # Para agentes Jenkins
+    volumes:
+      - jenkins-data:/var/jenkins_home
+      - /var/run/docker.sock:/var/run/docker.sock # Permite que o Jenkins gerencie containers no host
+    environment:
+      JENKINS_ADMIN_ID: admin
+      JENKINS_ADMIN_PASSWORD: admin123 # Substitua por algo mais seguro
+
 volumes:
   db-volume:
+  jenkins-data:

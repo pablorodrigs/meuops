@@ -1,6 +1,11 @@
 pipeline {
   agent any
 
+  environment {
+    DOCKER_USERNAME = credentials('docker-username')
+    DOCKER_PASSWORD = credentials('docker-password')
+  }
+
   stages {
     stage('Checkout') {
       steps {
@@ -11,19 +16,20 @@ pipeline {
     stage('Start container') {
       steps {
         echo 'Starting container from Docker Hub...'
-        bat 'docker-compose -f docker-compose.prod.yml pull' // Baixa a imagem do Docker Hub
+        bat 'docker login -u $DOCKER_USERNAME -p $DOCKER_PASSWORD'
+        bat 'docker-compose -f docker-compose.prod.yml pull'
         bat 'docker-compose -f docker-compose.prod.yml up -d --no-color'
+
         script {
-          // Espera até que o serviço esteja respondendo
           def retries = 30
           def success = false
           while (retries > 0 && !success) {
             try {
-              bat(script: 'curl http://localhost:8585', returnStatus: true)  // Tenta acessar o serviço
+              bat(script: 'curl -f http://localhost:8585', returnStatus: true)
               success = true
             } catch (Exception e) {
               echo "Service not responding, retrying... ($retries retries left)"
-              sleep(time: 10, unit: 'SECONDS')  // Aguarda 10 segundos antes de tentar novamente
+              sleep(time: 10, unit: 'SECONDS')
               retries--
             }
           }
@@ -31,14 +37,19 @@ pipeline {
             error "Service failed to start after several retries"
           }
         }
-        bat 'docker-compose -f docker-compose.prod.yml logs --tail=100' // Verifica os logs do serviço
-        bat 'docker-compose -f docker-compose.prod.yml ps' // Verifica o status do container
+        bat 'docker-compose -f docker-compose.prod.yml logs --tail=100'
+        bat 'docker-compose -f docker-compose.prod.yml ps'
       }
     }
 
     stage('Run tests against the container') {
       steps {
-        bat 'curl http://localhost:8585/actuator/health || echo "Service not responding"'
+        script {
+          def status = bat(script: 'curl -f http://localhost:8585/actuator/health', returnStatus: true)
+          if (status != 0) {
+            error "Health check failed"
+          }
+        }
       }
     }
   }
